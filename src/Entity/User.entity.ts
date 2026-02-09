@@ -32,6 +32,14 @@ export class User {
   @Column({ default: false })
   isVerify: boolean = false;
 
+  @Column({ default: false })
+  isBlocked: boolean;
+
+  @Column({ type: 'bigint', nullable: true })
+  blockedUntil: number;
+
+
+
   @CreateDateColumn()
   createdAt!: Date;
 

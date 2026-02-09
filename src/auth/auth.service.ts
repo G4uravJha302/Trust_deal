@@ -1,4 +1,6 @@
 import { BadRequestException, 
+  Body, 
+  ForbiddenException, 
   HttpException, 
   Injectable, 
   UnauthorizedException } from '@nestjs/common';
@@ -11,6 +13,8 @@ import { OtpVerifyDTO } from './Dto/otpVerify.dto';
 import { User} from '../Entity/User.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { BlockService } from '../utils/block.service';
+import e from 'express';
 
 @Injectable()
 export class AuthService {
@@ -65,24 +69,32 @@ export class AuthService {
 
 async login(user: LoginUserDTO) {
     try {
-      const exitingUser = await this.userModel.findOne({ where: { username: user.username } });
+      const existingUser = await this.userModel.findOne({ where: { username: user.username } });
       
-      if (!exitingUser) {
+      if (!existingUser) {
         throw new BadRequestException('User is not exit');
       }
 
-      const isValidPassword = await compare(user.password, exitingUser.password);
+      const isValidPassword = await compare(user.password, existingUser.password);
       
       if (!isValidPassword) {
         throw new UnauthorizedException('Wrong Password');
       }
+      if (
+       existingUser.blockedUntil &&
+        existingUser.blockedUntil > Date.now()
+      ) {
+    throw new ForbiddenException(
+      'Account temporarily blocked. Try again later.'
+    );
 
+}
       const payload = {
-        userId: exitingUser.id,
-        username: exitingUser.username,
+        userId: existingUser.id,
+        username: existingUser.username,
       };
       const token = await this.jwtService.signAsync(payload);
-      return { exitingUser, token };
+      return { existingUser, token };
       } 
       catch (error) {
         if (error instanceof HttpException) {
@@ -94,12 +106,11 @@ async login(user: LoginUserDTO) {
     }
   }
 
-
 async otpVerify(userData: OtpVerifyDTO) {
   try {
     const { otp, username } = userData;
 
-    //  User  find 
+ 
     const existingUser = await this.userModel.findOne({ 
       where: { username } 
     });
@@ -108,19 +119,15 @@ async otpVerify(userData: OtpVerifyDTO) {
       throw new BadRequestException('User does not exist. Please check username');
     }
 
-    //  Check if user is already verified
     if (existingUser.isVerify) {
       throw new BadRequestException('User is already verified');
     }
 
-    //  Check if OTP exists
     if (!existingUser.otp) {
       throw new BadRequestException('No OTP found. Please request a new OTP');
     }
 
-    //  Check OTP expiry FIRST (before checking attempts)
     if (existingUser.otpExpire && existingUser.otpExpire < Date.now()) {
-      // Reset OTP data
       existingUser.otp = null;
       existingUser.otpExpire = null;
       existingUser.otpAttempts = 0;
@@ -129,20 +136,19 @@ async otpVerify(userData: OtpVerifyDTO) {
       throw new BadRequestException('OTP has expired. Please request a new OTP');
     }
 
-    //  Check max attempts (5 attempts allowed)
     if (existingUser.otpAttempts >= 5) {
       // Clear OTP after max attempts
       existingUser.otp = null;
       existingUser.otpExpire = null;
       existingUser.otpAttempts = 0;
+      existingUser.isBlocked = true;
+      existingUser.blockedUntil = Date.now() + 24 * 60 * 60 * 1000;
       await this.userModel.save(existingUser);
       
-      throw new BadRequestException('Maximum OTP attempts exceeded. Please request a new OTP');
+      throw new BadRequestException('You are blocked for 24 hours due to multiple wrong OTP attempts');
     }
 
-    //  Verify OTP
     if (existingUser.otp !== otp) {
-      // Increment attempt counter
       existingUser.otpAttempts += 1;
       await this.userModel.save(existingUser);
       
@@ -152,11 +158,11 @@ async otpVerify(userData: OtpVerifyDTO) {
       );
     }
 
-    //  OTP verified successfully - Update user
     existingUser.isVerify = true;
     existingUser.otp = null;
-    existingUser.otpExpire = null;
-    existingUser.otpAttempts = 0; // Reset attempts
+    existingUser.otpExpire = null; 
+    existingUser.otpAttempts = 0;
+    existingUser.isBlocked = false;
     
     await this.userModel.save(existingUser);
 
@@ -177,10 +183,16 @@ async otpVerify(userData: OtpVerifyDTO) {
   }
 }
 
-async resendOtp(username: string) {
+
+async resendOtp(@Body() body: { username: string }) {
+  const { username } = body;
+  // console.log(username);
+   
   const existingUser = await this.userModel.findOne({ 
     where: { username } 
   });
+   
+  console.log(existingUser);
 
   if (!existingUser) {
     throw new BadRequestException('User does not exist');
@@ -190,30 +202,42 @@ async resendOtp(username: string) {
     throw new BadRequestException('User is already verified');
   }
 
-  // ✅ Generate new OTP
-  const otp = Math.floor(1000 + Math.random() * 9000).toString();
-  const otpExpire = Date.now() + 10 * 60 * 1000; // 10 minutes
+        if (
+        existingUser.isBlocked &&
+        existingUser.blockedUntil > Date.now()
+      ) {
+        throw new BadRequestException(
+          'OTP resend blocked for 24 hours'
+        );
+      }
 
-  // Send email
-    const isMailSent = await MailerService.prototype.sendOtpEmail(existingUser.email, otp);
+
+  const otp = Math.floor(1000 + Math.random() * 9000).toString();
+  const otpExpire = Date.now() + 10 * 60 * 1000; 
+
+    const isMailSent = await this.mailerService.sendOtpEmail(existingUser.email, otp);
     console.log("otp is:",otp);
 
   if (!isMailSent) {
     throw new BadRequestException('Failed to send OTP. Please try again');
   }
+    if (existingUser.otpAttempts >= 5) {
+      existingUser.isBlocked = true;
+      existingUser.blockedUntil = Date.now() + 24 * 60 * 60 * 1000;
+      await this.userModel.save(existingUser);
+    throw new BadRequestException('Too many wrong attempts');
 
-  // ✅ Update user with new OTP and reset attempts
+  }
   existingUser.otp = otp;
   existingUser.otpExpire = otpExpire;
-  existingUser.otpAttempts = 0; // Reset attempts
+  existingUser.otpAttempts += 1; 
   await this.userModel.save(existingUser);
 
-  console.log('New OTP:', otp); // Development only - remove in production
+  console.log('New OTP:', otp); 
 
   return {
     success: true,
     message: 'New OTP sent successfully',
   };
 }
-
 }

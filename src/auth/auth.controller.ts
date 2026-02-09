@@ -27,6 +27,7 @@ export class AuthController {
     return {
       message: 'User registered successfully',
       isLogin: true,
+      token,
       user: {
         username: newUser.username,
       },
@@ -36,7 +37,7 @@ export class AuthController {
  @Post('Login')
   @UsePipes(new ValidationPipe())
   async login(@Body() loginUser: LoginUserDTO, @Res({ passthrough: true }) res: express.Response) {
-    const { exitingUser, token } = await this.authService.login(loginUser);
+    const { existingUser, token } = await this.authService.login(loginUser);
     res.cookie('token', token, {
       httpOnly: true,
       secure: false,
@@ -47,14 +48,21 @@ export class AuthController {
       message: 'User login successfully',
       isLogin: true,
       user: {
-        _id: exitingUser.id,
-        username: exitingUser.username,
+        _id: existingUser.id,
+        username: existingUser.username,
       },
     };
   }
 
+  @Post('resendOtp')
+  @UsePipes(new ValidationPipe())
+  async resendOtp(@Body() body: { username: string }) {
+    const reqData = await this.authService.resendOtp(body);
+    return reqData;
+  }
+
   @Post('otpVerify')
- // @UseGuards(AuthGuard)
+  @UseGuards(AuthGuard)
   @UsePipes(new ValidationPipe())
   async otpVerify(@Body() otpVerifyData: OtpVerifyDTO) {
     const reqData = await this.authService.otpVerify(otpVerifyData);
@@ -62,7 +70,7 @@ export class AuthController {
   }
 
   @Post('LogOut')
- // @UseGuards(AuthGuard)
+  @UseGuards(AuthGuard)
   LogOut(@Res({ passthrough: true }) res: express.Response) {
     res.clearCookie('token', {
       httpOnly: true,

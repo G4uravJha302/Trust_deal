@@ -9,8 +9,8 @@ export class AuthGuard implements CanActivate {
     const request = context.switchToHttp().getRequest();
     
     // Cookies mein se 'access_token' nikalna
-    const token = request.cookies['access_token']; 
-
+    const token = request.cookies['token']; 
+    console.log('Token:', token);
     if (!token) {
       throw new UnauthorizedException('Session expired. Please login again.');
     }

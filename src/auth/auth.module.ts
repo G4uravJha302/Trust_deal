@@ -5,11 +5,13 @@ import { ModelModule } from '../Entity/Entity.module';
 import { MailerModule } from '../comman/utils/mail/otp.module';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import { SecurityModule } from '../utils/security.module';
+
 
 @Module({
   imports: [ModelModule,
     MailerModule,
-
+    SecurityModule,
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({

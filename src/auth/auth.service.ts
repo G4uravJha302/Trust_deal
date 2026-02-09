@@ -172,12 +172,11 @@ async otpVerify(userData: OtpVerifyDTO) {
     };
 
   } catch (error) {
-    //  Re-throw known HTTP exceptions
+
     if (error instanceof HttpException) {
       throw error;
     }
-    
-    //  Log unexpected errors
+  
     console.error('Unexpected error while verifying OTP:', error);
     throw new BadRequestException('Error while verifying OTP. Please try again');
   }
@@ -186,7 +185,6 @@ async otpVerify(userData: OtpVerifyDTO) {
 
 async resendOtp(@Body() body: { username: string }) {
   const { username } = body;
-  // console.log(username);
    
   const existingUser = await this.userModel.findOne({ 
     where: { username } 

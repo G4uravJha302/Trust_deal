@@ -2,25 +2,30 @@
 import { Injectable, ForbiddenException } from '@nestjs/common';
 import { User } from '../Entity/User.entity';
 import { Repository } from 'typeorm';
+import { InjectRepository } from '@nestjs/typeorm';
+import { dateTimestampProvider } from 'rxjs/internal/scheduler/dateTimestampProvider';
 
 @Injectable()
+@Injectable()
 export class BlockService {
-  async check(user: User, userRepo?: Repository<User>) {
-    
-    if (user.blockedUntil && user.blockedUntil > Date.now()) {
-      throw new ForbiddenException(
-        'Account temporarily blocked. Try again later.'
-      );
-    }
+  constructor(
+    @InjectRepository(User) private userRepo: Repository<User>
+  ) {}
 
+  async check(user: User): Promise<void> {
+    const now = new Date();
     
-    if (user.blockedUntil && user.blockedUntil <= Date.now()) {
-      user.blockedUntil = null;
-      user.otpAttempts = 0;
-
-      if (userRepo) {
-        await userRepo.save(user);
-      }
+    if (user.blockedUntil && user.blockedUntil > now.getTime()) {
+      throw new ForbiddenException('Account temporarily blocked');
     }
+    if (user.blockedUntil && user.blockedUntil <= now.getTime()) {
+      await this.unblockUser(user);
+    }
+  }
+
+  private async unblockUser(user: User): Promise<void> {
+    user.blockedUntil = null;
+    user.otpAttempts = 0;
+    await this.userRepo.save(user);
   }
 }

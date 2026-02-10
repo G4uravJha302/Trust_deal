@@ -78,8 +78,21 @@ async login(user: LoginUserDTO) {
       const isValidPassword = await compare(user.password, existingUser.password);
       
       if (!isValidPassword) {
-        throw new UnauthorizedException('Wrong Password');
+        existingUser.failedLoginAttempts += 1;
+        await this.userModel.save(existingUser);
+
+          if(existingUser.failedLoginAttempts >= 5) {
+        existingUser.isBlocked = true;
+        existingUser.blockedUntil = Date.now() + 24 * 60 * 60 * 1000;
+        await this.userModel.save(existingUser);
+        throw new ForbiddenException('Account temporarily blocked due to multiple failed login attempts. Try again later.');
       }
+
+              throw new UnauthorizedException('Wrong Password');
+
+      }
+
+      
       if (
        existingUser.blockedUntil &&
         existingUser.blockedUntil > Date.now()

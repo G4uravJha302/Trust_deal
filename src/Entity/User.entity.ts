@@ -4,8 +4,11 @@ import {
   Column, 
   PrimaryGeneratedColumn, 
   CreateDateColumn, 
-  UpdateDateColumn 
+  UpdateDateColumn, 
+  OneToOne,
+  JoinColumn
 } from 'typeorm';
+import { Profile } from './profile.entity';
 
 @Entity('users')
 export class User {
@@ -51,6 +54,13 @@ export class User {
   @Exclude()
   failedLoginAttempts!: number;
 
+  @OneToOne(() => Profile, (profile) => profile.user, { 
+    cascade: true,
+    eager: true
+  })
+  @JoinColumn()
+  profile: Profile;
+
   @CreateDateColumn()
   @Exclude()
   createdAt!: Date;
@@ -58,4 +68,5 @@ export class User {
   @UpdateDateColumn()
   @Exclude()
   updatedAt!: Date;
+  isActive: boolean;
 }

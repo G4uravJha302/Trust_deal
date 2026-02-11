@@ -18,10 +18,11 @@ export class UserController {
     return this.userService.getProfile(token);
   }
 
-  //PUT /users/me
+  //Patch /users/me
   @Patch('me')
   updateMyProfile(@Req() req, @Body() profileDTO: profileDTO) {
-   return this.userService.updateProfile(req, profileDTO);
+    const token = req.cookies['token'];
+   return this.userService.updateProfile(token, profileDTO);
   }
 
   // DELETE /users/me

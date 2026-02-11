@@ -1,68 +1,108 @@
-import { Injectable, Req, UnauthorizedException } from '@nestjs/common';
-import { profileDTO } from './UserDTO/profile.dto';
+import { Injectable, UnauthorizedException, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { User } from '../Entity/User.entity';
 import { Repository } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
+import { User } from '../Entity/User.entity';
+import { Profile } from '../Entity/profile.entity';
 import { BlockService } from '../utils/block.service';
-import { ExceptionsHandler } from '@nestjs/core/exceptions/exceptions-handler';
+import { UpdateProfileDto } from '../user/UserDTO/update-profile.dto';
 
 @Injectable()
 export class UserService {
-    constructor(    
-      @InjectRepository(User) private userModel: Repository<User>,
-      private jwtService: JwtService,
-      private blockService: BlockService
-    ) {}
-      async getProfile(token: string) {
-          const userData = await this.jwtService.verifyAsync(token, {
-            secret: process.env.JWT_SECRET,
-          });
-          if (!userData) {
-            throw new UnauthorizedException('Invalid token');
-          }
+  constructor(
+    @InjectRepository(User) 
+    private userRepo: Repository<User>,
+    
+    @InjectRepository(Profile) 
+    private profileRepo: Repository<Profile>,
+    
+    private jwtService: JwtService,
+    private blockService: BlockService
+  ) {}
 
-          if (!token) throw new UnauthorizedException();
+  private async verifyToken(token: string) {
+    if (!token) {
+      throw new UnauthorizedException('Token is required');
+    }
 
-          const decoded = this.jwtService.decode(token);
-
-          const user = await this.userModel.findOneBy({ id: decoded.userId });
-         this.blockService.check(user);
-          return user;
-      } 
-
-      async updateProfile(@Req() req, updateProfile: profileDTO) {
-          const token = req.cookies['token'];
-          if (!token) throw new UnauthorizedException();
-          const userData = await this.jwtService.verifyAsync(token, {
-          secret: process.env.JWT_SECRET,
-          });
-          
-          if (!userData) {
-          throw new UnauthorizedException('Invalid token');
-          }
-          
-        const decoded = this.jwtService.decode(token);
-        const user = await this.userModel.findOneBy({ id: decoded.userId });
-
-        if(!user){
-          throw new DOMException('User Not Found.')
-        }
-
-    const isBlocked = this.blockService.check(user);
-         if (isBlocked) {
-          throw new UnauthorizedException('User is blocked from accessing the profile due to multiple failed OTP attempts.');
-        }
-
-        
-    await this.userModel.update(decoded.userId, { ...updateProfile });
-    return { id: decoded.userId, ...updateProfile };
+    try {
+      const userData = await this.jwtService.verifyAsync(token, {
+        secret: process.env.JWT_SECRET,
+      });
+      return userData;
+    } catch (error) {
+      throw new UnauthorizedException('Invalid or expired token');
+    }
   }
 
+  async getProfile(token: string) {
+    const userData = await this.verifyToken(token);
+    console.log(userData);
+    const user = await this.userRepo.findOne({
+      where: { id: userData.userId},
+      relations: ['profile'], 
+    });
 
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
 
-  deactivateAccount(userId: string) {
-    return { message: `User with id ${userId} has been deactivated.` };
+    // Check if blocked
+    await this.blockService.check(user);
+
+    return user; // ClassSerializerInterceptor @Exclude fields remove kar dega
   }
-  
+
+  async updateProfile(token: string, updateProfileDto: UpdateProfileDto) {
+    const userData = await this.verifyToken(token);
+
+    const user = await this.userRepo.findOne({
+      where: { id: userData.userId },
+      relations: ['profile'],
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Check if blocked
+    await this.blockService.check(user);
+
+    // Create profile if doesn't exist
+    if (!user.profile) {
+      user.profile = this.profileRepo.create({});
+    }
+
+    // Update profile fields
+    Object.assign(user.profile, updateProfileDto);
+
+    // Save (cascade will save profile too)
+    await this.userRepo.save(user);
+
+    return {
+      message: 'Profile updated successfully',
+      user,
+    };
+  }
+
+  async deactivateAccount(userId: string) {
+    const user = await this.userRepo.findOne({
+      where: { id: parseInt(userId) },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Option 1: Soft delete
+    user.isActive = false; // Add isActive column in entity
+    await this.userRepo.save(user);
+
+    // Option 2: Hard delete (uncomment if needed)
+    // await this.userRepo.delete(userId);
+
+    return { 
+      message: `User with id ${userId} has been deactivated.` 
+    };
+  }
 }

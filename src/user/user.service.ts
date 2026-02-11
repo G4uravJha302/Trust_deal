@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, NotFoundException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, NotFoundException, Req, Res } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
@@ -85,7 +85,11 @@ export class UserService {
     };
   }
 
-  async deactivateAccount(userId: string) {
+  async deactivateAccount(@Req() req, @Res() res) {
+    const token = req.cookies['token'];
+    const userData = await this.verifyToken(token);
+    const userId = userData.userId;
+
     const user = await this.userRepo.findOne({
       where: { id: parseInt(userId) },
     });
@@ -97,7 +101,13 @@ export class UserService {
     // Option 1: Soft delete
     user.isActive = false; // Add isActive column in entity
     await this.userRepo.save(user);
-
+    const clearToken = '';
+    res.clearCookie('token', { path: '/' });
+    res.clearCookie('refreshToken', { path: '/' });
+    res.status(200).json({ 
+      message: `User with id ${userId} has been deactivated.`, 
+      token: clearToken 
+    });
     // Option 2: Hard delete (uncomment if needed)
     // await this.userRepo.delete(userId);
 

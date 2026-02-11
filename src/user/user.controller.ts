@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Patch, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Patch, Req, Res, UseGuards } from '@nestjs/common';
 import { UserService } from './user.service';
 import { profileDTO } from './UserDTO/profile.dto';
 import { AuthGuard } from '../guard/auth.guard';
@@ -26,9 +26,10 @@ export class UserController {
   }
 
   // DELETE /users/me
-  @Delete('me')
-  deleteMyAccount(@Req() req) {
-    const userId = req.cookies['userId'];
-    return this.userService.deactivateAccount(userId);
-  }
+@Delete('me')
+@UseGuards(AuthGuard)  // ✅ Guard lagao
+deleteMyAccount(@Req() req, @Res() res) {
+  ;
+  return this.userService.deactivateAccount(req, res);
+}
 }    
